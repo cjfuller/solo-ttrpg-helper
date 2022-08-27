@@ -13,7 +13,7 @@ pub enum DiceError {
     Unparseable(String),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Die {
     pub sides: Sides,
 }
@@ -47,6 +47,7 @@ impl FromStr for Die {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum DiceSpecPart {
     Die { die: Die, count: usize },
     Modifier(Modifier),
@@ -61,9 +62,13 @@ impl FromStr for DiceSpecPart {
             if parts.len() != 2 {
                 return Err(DiceError::Unparseable(s.into()));
             }
-            let count: usize = parts[0]
-                .parse()
-                .map_err(|_| DiceError::Unparseable(s.into()))?;
+            let count: usize = if parts[0].is_empty() {
+                1
+            } else {
+                parts[0]
+                    .parse()
+                    .map_err(|_| DiceError::Unparseable(s.into()))?
+            };
             let die: Die = format!("d{}", parts[1]).parse()?;
             Ok(Self::Die { die, count })
         } else {
@@ -74,6 +79,7 @@ impl FromStr for DiceSpecPart {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Dice {
     counts: Vec<(Sides, usize)>,
     modifier: Option<Modifier>,
@@ -159,6 +165,7 @@ impl Display for Dice {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RollResult {
     rolls: Vec<(Die, Sides)>,
     modifier: Modifier,
@@ -192,5 +199,143 @@ impl Display for RollResult {
             self.modifier,
             self.total(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickcheck_macros::quickcheck;
+
+    use super::*;
+    #[test]
+    fn test_parse_plain_die() {
+        let d: Dice = "d8".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(8, 1)],
+                modifier: None
+            }
+        )
+    }
+
+    #[test]
+    fn test_parse_multi_die() {
+        let d: Dice = "d8 + d4".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(8, 1), (4, 1)],
+                modifier: None
+            }
+        )
+    }
+
+    #[test]
+    fn test_parse_with_coeff() {
+        let d: Dice = "2d4".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(4, 2)],
+                modifier: None
+            }
+        )
+    }
+
+    #[test]
+    fn test_parse_multi_die_with_coeff() {
+        let d: Dice = "d8 + 2d4".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(8, 1), (4, 2)],
+                modifier: None
+            }
+        )
+    }
+
+    #[test]
+    fn test_parse_multi_die_with_modifier() {
+        let d: Dice = "d8 + 2d4 + -7".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(8, 1), (4, 2)],
+                modifier: Some(-7)
+            }
+        )
+    }
+
+    #[test]
+    fn test_parse_multi_die_with_modifiers() {
+        let d: Dice = "d8 + 3 + 2d4 + -7".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![(8, 1), (4, 2)],
+                modifier: Some(-4)
+            }
+        )
+    }
+
+    #[test]
+    fn test_modifier_only() {
+        let d: Dice = "9".parse().unwrap();
+        assert_eq!(
+            d,
+            Dice {
+                counts: vec![],
+                modifier: Some(9)
+            }
+        )
+    }
+
+    #[quickcheck]
+    fn single_roll_range(sides: Sides) -> bool {
+        if sides > 0 {
+            let s = format!("d{}", sides);
+            let d: Dice = s.parse().unwrap();
+            let t = d.roll().total();
+            t <= sides.into() && t > 0
+        } else {
+            true
+        }
+    }
+
+    #[quickcheck]
+    fn single_roll_range_coeff(sides: Sides, coeff: u16) -> bool {
+        if sides > 0 && coeff > 0 && coeff < 1000 {
+            let s = format!("{}d{}", coeff, sides);
+            let d: Dice = s.parse().unwrap();
+            let t = d.roll().total();
+            t <= sides as i32 * coeff as i32 && t > 0
+        } else {
+            true
+        }
+    }
+
+    #[quickcheck]
+    fn multi_roll_range_coeff(sides: Sides, sides_2: Sides, coeff: u16) -> bool {
+        if sides > 0 && sides_2 > 0 && coeff > 0 && coeff < 1000 {
+            let s = format!("{}d{} + d{}", coeff, sides, sides_2);
+            let d: Dice = s.parse().unwrap();
+            let t = d.roll().total();
+            t <= sides as i32 * coeff as i32 + sides_2 as i32 && t > 0
+        } else {
+            true
+        }
+    }
+
+    #[quickcheck]
+    fn multi_roll_range_coeff_mod(sides: Sides, sides_2: Sides, coeff: u16, modifier: i32) -> bool {
+        if sides > 0 && sides_2 > 0 && coeff > 0 && coeff < 1000 && modifier.abs() < 10000 {
+            let s = format!("{}d{} + d{} + {}", coeff, sides, sides_2, modifier);
+            let d: Dice = s.parse().unwrap();
+            let t = d.roll().total();
+            t <= modifier + sides as i32 * coeff as i32 + sides_2 as i32 && t > modifier
+        } else {
+            true
+        }
     }
 }
