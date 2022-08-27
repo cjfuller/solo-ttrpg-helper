@@ -1,17 +1,27 @@
-use solo_ttrpg_helper::dice::{Dice, Die};
+use clap::Parser;
+
+use solo_ttrpg_helper::dice::Dice;
+
+#[derive(Debug, clap::Subcommand)]
+#[clap(trailing_var_arg = true)]
+enum Command {
+    #[clap(alias("r"), trailing_var_arg = true)]
+    Roll { dice_spec: Vec<String> },
+}
+
+#[derive(Debug, clap::Parser)]
+struct CLI {
+    #[clap(subcommand)]
+    subcommand: Command,
+}
 
 fn main() {
-    let die = Die { sides: 8 };
-    println!("Rolling 3{}:", die);
-    for _ in 0..3 {
-        println!("Rolled {}, got: {}", die, die.roll());
-    }
-
-    let test_rolls = ["3d8 + 2d4 + 7", "9", "2d20"];
-
-    for roll in test_rolls {
-        println!("Rolling {roll}");
-        let dice: Dice = roll.parse().unwrap();
-        println!("{}", dice.roll());
+    let cli = CLI::parse();
+    match cli.subcommand {
+        Command::Roll { dice_spec } => {
+            let s = dice_spec.join(" ");
+            let dice: Dice = s.parse().unwrap();
+            println!("{}", dice.roll());
+        }
     }
 }
